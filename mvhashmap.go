@@ -67,18 +67,29 @@ func (mv *MVHashMap) Write(k []byte, v Version, data []byte) {
 		return
 	})
 
-	cells.rw.Lock()
-	defer cells.rw.Unlock()
-
-	if ci, ok := cells.tm.Get(v.TxnIndex); ok && ci.(*WriteCell).incarnation >= v.Incarnation {
-		panic(fmt.Errorf("existing transaction value does not have lower incarnation: %v, %v",
-			base64.StdEncoding.EncodeToString(k), v.TxnIndex))
+	cells.rw.RLock()
+	ci, ok := cells.tm.Get(v.TxnIndex)
+	cells.rw.RUnlock()
+	if ok {
+		if ci.(*WriteCell).incarnation >= v.Incarnation {
+			panic(fmt.Errorf("existing transaction value does not have lower incarnation: %v, %v",
+				base64.StdEncoding.EncodeToString(k), v.TxnIndex))
+		} else if ci.(*WriteCell).flag == FlagEstimate {
+			println("marking previous estimate as done tx", v.TxnIndex, v.Incarnation)
+		}
+		// TODO: this may not be totally safe but trying it for now !!!
+		ci.(*WriteCell).flag = FlagDone
+		ci.(*WriteCell).incarnation = v.Incarnation
+		ci.(*WriteCell).data = data
+	} else {
+		cells.rw.Lock()
+		cells.tm.Put(v.TxnIndex, &WriteCell{
+			flag:        FlagDone,
+			incarnation: v.Incarnation,
+			data:        data,
+		})
+		cells.rw.Unlock()
 	}
-	cells.tm.Put(v.TxnIndex, &WriteCell{
-		flag:        FlagDone,
-		incarnation: v.Incarnation,
-		data:        data,
-	})
 
 	return
 }
@@ -89,13 +100,13 @@ func (mv *MVHashMap) MarkEstimate(k []byte, txIdx int) {
 		panic(fmt.Errorf("path must already exist"))
 	})
 
-	cells.rw.Lock()
-	defer cells.rw.Unlock()
+	cells.rw.RLock()
 	if ci, ok := cells.tm.Get(txIdx); !ok {
 		panic("should not happen - cell should be present for path")
 	} else {
 		ci.(*WriteCell).flag = FlagEstimate
 	}
+	cells.rw.RUnlock()
 }
 
 func (mv *MVHashMap) Delete(k []byte, txIdx int) {
@@ -158,6 +169,7 @@ func (mv *MVHashMap) Read(k []byte, txIdx int) (res mvReadResult) {
 		switch c.flag {
 		case FlagEstimate:
 			res.depIdx = iter.Key().(int)
+			res.value = c.data
 		case FlagDone:
 			{
 				res.depIdx = iter.Key().(int)

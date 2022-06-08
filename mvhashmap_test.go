@@ -7,7 +7,7 @@ import (
 )
 
 func valueFor(txIdx, inc int) []byte {
-	return []byte(fmt.Sprintf("%v:%v:%v", txIdx*5, txIdx+inc, inc*5))
+	return []byte(fmt.Sprintf("%ver:%ver:%ver", txIdx*5, txIdx+inc, inc*5))
 }
 
 func TestMVHashMapBasics(t *testing.T) {
