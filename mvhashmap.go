@@ -126,6 +126,7 @@ const (
 )
 
 type mvReadResult struct {
+	ver         Version
 	depIdx      int
 	incarnation int
 	value       []byte

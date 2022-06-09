@@ -5,18 +5,21 @@ import (
 	"fmt"
 )
 
-func validateVersion(ver Version, lastInputOutput *TxnInputOutput, versionedData *MVHashMap) (valid bool) {
+func validateVersion(txIdx int, lastInputOutput *TxnInputOutput, versionedData *MVHashMap) (valid bool) {
 
 	valid = true
-	for _, rd := range lastInputOutput.readSet(ver.TxnIndex) {
-		mvResult := versionedData.Read(rd.Path, ver.TxnIndex)
+	for _, rd := range lastInputOutput.readSet(txIdx) {
+		mvResult := versionedData.Read(rd.Path, txIdx)
 		switch mvResult.status() {
 		case mvReadResultDone:
-			valid = rd.Kind == ReadKindMap && rd.V == ver // TODO: this feels like checking an assertion but then treats it the same as explicit dependency?
+			valid = rd.Kind == ReadKindMap && rd.V == Version{
+				TxnIndex:    mvResult.depIdx,
+				Incarnation: mvResult.incarnation,
+			}
 		case mvReadResultDependency:
 			valid = false
 		case mvReadResultNone:
-			valid = rd.Kind == ReadKindStorage // TODO: same here... feels like an assertion?
+			valid = rd.Kind == ReadKindStorage // feels like an assertion?
 		default:
 			panic(fmt.Errorf("should not happen - undefined mv read status: %ver", mvResult.status()))
 		}
@@ -70,23 +73,18 @@ func (ev *ExecVersionView) ensureWriteMap() {
 
 func (ev *ExecVersionView) Execute() (er ExecResult) {
 	er.ver = ev.ver
-	er.err = ev.et.Execute(ev)
+	if er.err = ev.et.Execute(ev); er.err != nil {
+		println(fmt.Sprintf("executed task - failed %v.%v, err %v", ev.ver.TxnIndex, ev.ver.Incarnation, er.err))
+		return
+	}
 	for _, v := range ev.readMap {
-		if v.Kind == ReadKindAbort {
-			er.err = errExecAbort
-		}
 		er.txIn = append(er.txIn, v)
 	}
 	for _, v := range ev.writeMap {
 		er.txOut = append(er.txOut, v)
 	}
-	if er.err == nil {
-		println(fmt.Sprintf("executed task %v.%v, in %v, out %v", ev.ver.TxnIndex, ev.ver.Incarnation,
-			len(er.txIn), len(er.txOut)))
-	} else {
-		println(fmt.Sprintf("executed task - failed %v.%v, in %v, out %v - err %v", ev.ver.TxnIndex, ev.ver.Incarnation,
-			len(er.txIn), len(er.txOut), er.err))
-	}
+	println(fmt.Sprintf("executed task %v.%v, in %v, out %v", ev.ver.TxnIndex, ev.ver.Incarnation,
+		len(er.txIn), len(er.txOut)))
 	return
 }
 
@@ -96,7 +94,10 @@ func (ev *ExecVersionView) Read(k []byte) (v []byte, err error) {
 	ev.ensureReadMap()
 	res := ev.mvh.Read(k, ev.ver.TxnIndex)
 	var rd ReadDescriptor
-	rd.V = ev.ver
+	rd.V = Version{
+		TxnIndex:    res.depIdx,
+		Incarnation: res.incarnation,
+	}
 	rd.Path = k
 	switch res.status() {
 	case mvReadResultDone:
@@ -106,8 +107,7 @@ func (ev *ExecVersionView) Read(k []byte) (v []byte, err error) {
 		}
 	case mvReadResultDependency:
 		{
-			v = res.value
-			rd.Kind = ReadKindAbort
+			return nil, errExecAbort
 		}
 	case mvReadResultNone:
 		{
@@ -212,7 +212,6 @@ func ExecuteParallel(tasks []ExecTask, rw BaseReadWrite) (lastTxIO *TxnInputOutp
 			}
 		case errExecAbort:
 			{
-				lastTxIO.recordRead(res.ver.TxnIndex, res.txIn)
 				// bit of a subtle / tricky bug here. this adds the tx back to pending ...
 				execTasks.revertInProgress(res.ver.TxnIndex)
 				// ... but the incarnation needs to be bumped
@@ -255,7 +254,7 @@ func ExecuteParallel(tasks []ExecTask, rw BaseReadWrite) (lastTxIO *TxnInputOutp
 		for i := 0; i < len(toValidate); i++ {
 			cntTotalValidations++
 			tx := toValidate[i]
-			if validateVersion(Version{tx, txIncarnations[tx]}, lastTxIO, mvh) {
+			if validateVersion(tx, lastTxIO, mvh) {
 				println(fmt.Sprintf("* completed validation task %v", tx))
 				validateTasks.markComplete(tx)
 			} else {

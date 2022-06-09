@@ -5,7 +5,6 @@ import "encoding/base64"
 const (
 	ReadKindMap     = 0
 	ReadKindStorage = 1
-	ReadKindAbort   = 2
 )
 
 type ReadDescriptor struct {

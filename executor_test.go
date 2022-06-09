@@ -38,7 +38,7 @@ func TestSimpleDependency(t *testing.T) {
 	inp2 := []ReadDescriptor{{p2, ReadKindStorage, Version{2, 1}}}
 	lastTxIO.recordRead(2, inp2)
 
-	valid := validateVersion(Version{2, 1}, lastTxIO, mvh)
+	valid := validateVersion(2, lastTxIO, mvh)
 	require.False(t, valid, "tx2 sees dependency on tx1 write") // would cause re-exec and re-validation of tx2
 
 	// tx2 now 're-executes' - new incarnation
@@ -49,7 +49,7 @@ func TestSimpleDependency(t *testing.T) {
 	inp2 = []ReadDescriptor{{p2, ReadKindMap, Version{2, 2}}}
 	lastTxIO.recordRead(2, inp2)
 
-	valid = validateVersion(Version{2, 2}, lastTxIO, mvh)
+	valid = validateVersion(2, lastTxIO, mvh)
 	require.True(t, valid, "tx2 is complete since dep on tx1 is satisfied")
 
 }
@@ -91,12 +91,12 @@ type testConflictExecTask struct {
 // this simulates each task reading from and incrementing the same counter
 func (t testConflictExecTask) Execute(rw BaseReadWrite) error {
 	var cnt uint32
+	time.Sleep(t.wait)
 	if v, err := rw.Read([]byte("test-key-0")); err != nil {
 		return err
 	} else {
 		cnt = binary.BigEndian.Uint32(v)
 	}
-	time.Sleep(t.wait)
 	var b [4]byte
 	cnt++
 	binary.BigEndian.PutUint32(b[:], cnt)
