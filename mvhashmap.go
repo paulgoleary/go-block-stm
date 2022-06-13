@@ -67,9 +67,11 @@ func (mv *MVHashMap) Write(k []byte, v Version, data []byte) {
 		return
 	})
 
-	cells.rw.RLock()
+	// TODO: could probably have a scheme where this only generally requires a read lock since any given transaction transaction
+	//  should only have one incarnation executing at a time...
+	cells.rw.Lock()
+	defer cells.rw.Unlock()
 	ci, ok := cells.tm.Get(v.TxnIndex)
-	cells.rw.RUnlock()
 	if ok {
 		if ci.(*WriteCell).incarnation >= v.Incarnation {
 			panic(fmt.Errorf("existing transaction value does not have lower incarnation: %v, %v",
@@ -77,18 +79,15 @@ func (mv *MVHashMap) Write(k []byte, v Version, data []byte) {
 		} else if ci.(*WriteCell).flag == FlagEstimate {
 			println("marking previous estimate as done tx", v.TxnIndex, v.Incarnation)
 		}
-		// TODO: this may not be totally safe but trying it for now !!!
 		ci.(*WriteCell).flag = FlagDone
 		ci.(*WriteCell).incarnation = v.Incarnation
 		ci.(*WriteCell).data = data
 	} else {
-		cells.rw.Lock()
 		cells.tm.Put(v.TxnIndex, &WriteCell{
 			flag:        FlagDone,
 			incarnation: v.Incarnation,
 			data:        data,
 		})
-		cells.rw.Unlock()
 	}
 
 	return

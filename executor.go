@@ -28,8 +28,6 @@ func validateVersion(txIdx int, lastInputOutput *TxnInputOutput, versionedData *
 		}
 	}
 
-	// TODO: set state and such depending on result of validation ???
-
 	return
 }
 
