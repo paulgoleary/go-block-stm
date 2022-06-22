@@ -157,22 +157,15 @@ func (mv *MVHashMap) Read(k []byte, txIdx int) (res mvReadResult) {
 	cells.rw.RLock()
 	defer cells.rw.RUnlock()
 
-	iter := cells.tm.Iterator()
-	iter.End()
-	if iter.PrevTo(func(k interface{}, v interface{}) bool {
-		if k.(int) < txIdx {
-			return true
-		}
-		return false
-	}) {
-		c := iter.Value().(*WriteCell)
+	if fk, fv := cells.tm.Floor(txIdx - 1); fk != nil && fv != nil {
+		c := fv.(*WriteCell)
 		switch c.flag {
 		case FlagEstimate:
-			res.depIdx = iter.Key().(int)
+			res.depIdx = fk.(int)
 			res.value = c.data
 		case FlagDone:
 			{
-				res.depIdx = iter.Key().(int)
+				res.depIdx = fk.(int)
 				res.incarnation = c.incarnation
 				res.value = c.data
 			}
@@ -180,5 +173,6 @@ func (mv *MVHashMap) Read(k []byte, txIdx int) (res mvReadResult) {
 			panic(fmt.Errorf("should not happen - unknown flag value"))
 		}
 	}
+
 	return
 }
