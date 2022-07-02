@@ -2,13 +2,20 @@ package block_stm
 
 import (
 	"encoding/base64"
+	"errors"
 	"fmt"
-	"github.com/emirpasic/gods/maps/treemap"
 	"sync"
+
+	"github.com/emirpasic/gods/maps/treemap"
 )
 
 const FlagDone = 0
 const FlagEstimate = 1
+
+var (
+	ErrLowerIncarnation   = errors.New("existing transaction value does not have lower incarnation")
+	ErrInvalidKeyCellPath = errors.New("invalid key cell path, must already exist")
+)
 
 type MVHashMap struct {
 	rw sync.RWMutex
@@ -28,6 +35,11 @@ type WriteCell struct {
 	data        []byte
 }
 
+// Structure of tm (treemap):
+// Key:     TxnIndex
+// Value:   &WriteCell
+// example: map[10:&{0 1 [53 48 101 114 58 49 49 101 114 58 53 101 114]}]
+// map[TxnIndex:&{flag incarnation data}]
 type TxnIndexCells struct {
 	rw sync.RWMutex
 	tm *treemap.Map
@@ -50,6 +62,8 @@ func (mv *MVHashMap) getKeyCells(k []byte, fNoKey func(kenc string) *TxnIndexCel
 	return
 }
 
+// arguments:   memory location, Version, data
+// returns:     mvReadResult
 func (mv *MVHashMap) Write(k []byte, v Version, data []byte) {
 
 	cells := mv.getKeyCells(k, func(kenc string) (cells *TxnIndexCells) {
@@ -74,6 +88,7 @@ func (mv *MVHashMap) Write(k []byte, v Version, data []byte) {
 	ci, ok := cells.tm.Get(v.TxnIndex)
 	if ok {
 		if ci.(*WriteCell).incarnation >= v.Incarnation {
+			// ErrLowerIncarnation
 			panic(fmt.Errorf("existing transaction value does not have lower incarnation: %v, %v",
 				base64.StdEncoding.EncodeToString(k), v.TxnIndex))
 		} else if ci.(*WriteCell).flag == FlagEstimate {
@@ -96,6 +111,7 @@ func (mv *MVHashMap) Write(k []byte, v Version, data []byte) {
 func (mv *MVHashMap) MarkEstimate(k []byte, txIdx int) {
 
 	cells := mv.getKeyCells(k, func(_ string) *TxnIndexCells {
+		// ErrInvalidKeyCellPath
 		panic(fmt.Errorf("path must already exist"))
 	})
 
@@ -118,14 +134,19 @@ func (mv *MVHashMap) Delete(k []byte, txIdx int) {
 	cells.tm.Remove(txIdx)
 }
 
+// mvReadResultDone:         read result for the current tx (depIdx != -1 , incarnation != -1)
+// mvReadResultDependency:   read result for the dependency tx (depIdx != -1, incarnation = -1)
+// mvReadResultNone:         nothing to read (depIdx = -1)
 const (
 	mvReadResultDone       = 0
 	mvReadResultDependency = 1
 	mvReadResultNone       = 2
 )
 
+// depIdx:        dependency Index (previous txn) at this location
+// incarnation:   incarnation of previous txn at this location
+// value:         value stored at this location
 type mvReadResult struct {
-	ver         Version
 	depIdx      int
 	incarnation int
 	value       []byte
@@ -142,6 +163,8 @@ func (mvr mvReadResult) status() int {
 	return mvReadResultNone
 }
 
+// arguments:   memory location and the transaction index
+// returns:     mvReadResult
 func (mv *MVHashMap) Read(k []byte, txIdx int) (res mvReadResult) {
 
 	res.depIdx = -1
@@ -157,6 +180,11 @@ func (mv *MVHashMap) Read(k []byte, txIdx int) (res mvReadResult) {
 	cells.rw.RLock()
 	defer cells.rw.RUnlock()
 
+	// fk:   depIdx
+	// fv:   flag, incarnation, data (example: &{1 1 [53 48 101 114 58 49 49 101 114 58 53 101 114]})
+	// Floor key is defined as the largest key that is smaller than or equal to the given key
+	// this reads from the treemap, key (fk) and value (fv) of transaction with largest index than txIdx,
+	// returns nil if not found
 	if fk, fv := cells.tm.Floor(txIdx - 1); fk != nil && fv != nil {
 		c := fv.(*WriteCell)
 		switch c.flag {
