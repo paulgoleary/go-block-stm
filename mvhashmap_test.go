@@ -17,16 +17,21 @@ func valueFor(txIdx, inc int) []byte {
 // goos: darwin
 // goarch: arm64
 // pkg: github.com/paulgoleary/go-block-stm
-// BenchmarkWriteTimeSameLocationDifferentTxIdx-8   	       1	1383456542 ns/op	256013944 B/op	10000068 allocs/op
+// BenchmarkWriteTimeSameLocationDifferentTxIdx-8   	  994430	      1242 ns/op	     256 B/op	      10 allocs/op
 // PASS
-// ok  	github.com/paulgoleary/go-block-stm	1.793s
+// ok  	github.com/paulgoleary/go-block-stm	2.636s
 func BenchmarkWriteTimeSameLocationDifferentTxIdx(b *testing.B) {
 	mvh2 := MakeMVHashMap()
 	ap2 := []byte("/foo/b")
+
+	randInts := []int{}
+	for i := 0; i < b.N; i++ {
+		randInts = append(randInts, rand.Intn(1000000000000000))
+	}
+
 	b.ResetTimer()
-	for i := 0; i < 1000000; i++ {
-		txIdx := rand.Intn(1000000000000000)
-		mvh2.Write(ap2, Version{txIdx, 1}, valueFor(txIdx, 1))
+	for i := 0; i < b.N; i++ {
+		mvh2.Write(ap2, Version{randInts[i], 1}, valueFor(randInts[i], 1))
 	}
 }
 
@@ -34,23 +39,26 @@ func BenchmarkWriteTimeSameLocationDifferentTxIdx(b *testing.B) {
 // goos: darwin
 // goarch: arm64
 // pkg: github.com/paulgoleary/go-block-stm
-// BenchmarkReadTimeSameLocationDifferentTxIdx-8   	1000000000	         0.8775 ns/op	       0 B/op	       0 allocs/op
+// BenchmarkReadTimeSameLocationDifferentTxIdx-8   	 1388722	       965.2 ns/op	      24 B/op	       3 allocs/op
 // PASS
-// ok  	github.com/paulgoleary/go-block-stm	156.475s
+// ok  	github.com/paulgoleary/go-block-stm	5.658s
 func BenchmarkReadTimeSameLocationDifferentTxIdx(b *testing.B) {
 	mvh2 := MakeMVHashMap()
 	ap2 := []byte("/foo/b")
 	txIdxSlice := []int{}
-	for i := 0; i < 1000000; i++ {
+	for i := 0; i < b.N; i++ {
 		txIdx := rand.Intn(1000000000000000)
 		txIdxSlice = append(txIdxSlice, txIdx)
 		mvh2.Write(ap2, Version{txIdx, 1}, valueFor(txIdx, 1))
 	}
 
 	b.ResetTimer()
+	readRes := []mvReadResult{}
+	var res mvReadResult
 	for _, value := range txIdxSlice {
-		mvh2.Read(ap2, value)
+		res = mvh2.Read(ap2, value)
 	}
+	readRes = append(readRes, res)
 }
 
 // go test -run TestLowerIncarnation -v
