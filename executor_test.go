@@ -9,49 +9,49 @@ import (
 	"time"
 )
 
-func TestSimpleDependency(t *testing.T) {
+func TestCoreDependency(t *testing.T) {
 
 	// assume two transactions:
+	// . tx0 reads from path0 and writes to path1
 	// . tx1 reads from path1 and writes to path2
-	// . tx2 reads from path2 and writes to path3
 
+	p0 := []byte("/foo/0")
 	p1 := []byte("/foo/1")
 	p2 := []byte("/foo/2")
-	p3 := []byte("/foo/3")
 
 	mvh := MakeMVHashMap()
+	lastTxIO := MakeTxnInputOutput(2)
 
 	// assume these two tasks happen in parallel ...
 
-	// ... but second tx doesn't 'see' tx1's write to p2
-	res2 := mvh.Read(p2, 2)
-	require.Equal(t, mvReadResultNone, res2.status())
-	mvh.Write(p3, Version{2, 1}, valueFor(2, 1))
-
+	// ... but second tx doesn't 'see' tx0's write to p1
 	res1 := mvh.Read(p1, 1)
-	require.Equal(t, mvReadResultNone, res1.status())
+	require.Equal(t, mvReadResultNone, res1.status(), "tx1 read from disk")
+	mvh.Write(p2, Version{1, 0}, valueFor(1, 0))
+	// recordRead read dep of tx1
+	inp1 := []ReadDescriptor{res1.rd(p1)}
+	lastTxIO.recordRead(1, inp1)
+
+	res0 := mvh.Read(p0, 0)
+	require.Equal(t, mvReadResultNone, res0.status(), "tx0 read from disk")
+	mvh.Write(p1, Version{0, 0}, valueFor(0, 0))
+	// recordRead read dep of tx0
+	inp0 := []ReadDescriptor{res0.rd(p0)}
+	lastTxIO.recordRead(0, inp0)
+
+	valid := validateVersion(1, lastTxIO, mvh)
+	require.False(t, valid, "tx1 sees dependency on tx0 write") // would cause re-exec and re-validation of tx1
+
+	// tx1 now 're-executes' - new incarnation
+	res1 = mvh.Read(p1, 1)
+	require.Equal(t, mvReadResultDone, res1.status(), "tx1 now sees 'done' write of tx0 to p1")
 	mvh.Write(p2, Version{1, 1}, valueFor(1, 1))
+	// recordRead read dep of tx1
+	inp1 = []ReadDescriptor{res1.rd(p1)}
+	lastTxIO.recordRead(1, inp1)
 
-	lastTxIO := MakeTxnInputOutput(3) // assume there's a tx0 :)
-
-	// recordRead read deps of tx2
-	inp2 := []ReadDescriptor{{p2, ReadKindStorage, Version{2, 1}}}
-	lastTxIO.recordRead(2, inp2)
-
-	valid := validateVersion(2, lastTxIO, mvh)
-	require.False(t, valid, "tx2 sees dependency on tx1 write") // would cause re-exec and re-validation of tx2
-
-	// tx2 now 're-executes' - new incarnation
-	res2 = mvh.Read(p2, 2)
-	require.Equal(t, mvReadResultDone, res2.status(), "tx2 now sees 'done' write of tx1 to p2")
-	mvh.Write(p3, Version{2, 2}, valueFor(2, 2))
-
-	inp2 = []ReadDescriptor{{p2, ReadKindMap, Version{2, 2}}}
-	lastTxIO.recordRead(2, inp2)
-
-	valid = validateVersion(2, lastTxIO, mvh)
-	require.True(t, valid, "tx2 is complete since dep on tx1 is satisfied")
-
+	valid = validateVersion(1, lastTxIO, mvh)
+	require.True(t, valid, "tx1 is complete since dep on tx0 is satisfied")
 }
 
 type testExecTask struct {

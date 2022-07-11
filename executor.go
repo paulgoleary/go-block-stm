@@ -12,7 +12,8 @@ func validateVersion(txIdx int, lastInputOutput *TxnInputOutput, versionedData *
 		mvResult := versionedData.Read(rd.Path, txIdx)
 		switch mvResult.status() {
 		case mvReadResultDone:
-			valid = rd.Kind == ReadKindMap && rd.V == Version{
+			valid = rd.Kind == ReadKindMap
+			valid = valid && rd.V == Version{
 				TxnIndex:    mvResult.depIdx,
 				Incarnation: mvResult.incarnation,
 			}
@@ -91,17 +92,10 @@ var errExecAbort = fmt.Errorf("execution aborted with dependency")
 func (ev *ExecVersionView) Read(k []byte) (v []byte, err error) {
 	ev.ensureReadMap()
 	res := ev.mvh.Read(k, ev.ver.TxnIndex)
-	var rd ReadDescriptor
-	rd.V = Version{
-		TxnIndex:    res.depIdx,
-		Incarnation: res.incarnation,
-	}
-	rd.Path = k
 	switch res.status() {
 	case mvReadResultDone:
 		{
 			v = res.value
-			rd.Kind = ReadKindMap
 		}
 	case mvReadResultDependency:
 		{
@@ -110,11 +104,11 @@ func (ev *ExecVersionView) Read(k []byte) (v []byte, err error) {
 	case mvReadResultNone:
 		{
 			v, err = ev.rw.Read(k)
-			rd.Kind = ReadKindStorage
 		}
 	default:
 		return nil, fmt.Errorf("should not happen - invalid read result status '%ver'", res.status())
 	}
+	rd := res.rd(v)
 	mk := base64.StdEncoding.EncodeToString(k)
 	// TODO: I assume we don't want to overwrite an existing read because this could - for example - change a storage
 	//  read to map if the same value is read multiple times.

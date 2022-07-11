@@ -74,8 +74,10 @@ func TestLowerIncarnation(t *testing.T) {
 	mvh.Write(ap1, Version{1, 2}, valueFor(1, 2))
 	mvh.Write(ap1, Version{0, 5}, valueFor(0, 5))
 	mvh.Write(ap1, Version{1, 5}, valueFor(1, 5))
-	// will fail (panic) as Version{0 4} has lower incarnation than Version{0 5}
-	mvh.Write(ap1, Version{0, 4}, valueFor(0, 4))
+
+	require.Panics(t, func() {
+		mvh.Write(ap1, Version{0, 4}, valueFor(0, 4))
+	}, "will fail (panic) as Version{0 4} has lower incarnation than Version{0 5}")
 }
 
 func TestMarkEstimate(t *testing.T) {

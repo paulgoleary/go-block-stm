@@ -152,15 +152,36 @@ type mvReadResult struct {
 	value       []byte
 }
 
-func (mvr mvReadResult) status() int {
-	if mvr.depIdx != -1 {
-		if mvr.incarnation == -1 {
+func (res mvReadResult) status() int {
+	if res.depIdx != -1 {
+		if res.incarnation == -1 {
 			return mvReadResultDependency
 		} else {
 			return mvReadResultDone
 		}
 	}
 	return mvReadResultNone
+}
+
+func (res mvReadResult) rd(k []byte) (rd ReadDescriptor) {
+	rd.V = Version{
+		TxnIndex:    res.depIdx,
+		Incarnation: res.incarnation,
+	}
+	rd.Path = k
+	switch res.status() {
+	case mvReadResultDone:
+		{
+			rd.Kind = ReadKindMap
+		}
+	case mvReadResultNone:
+		{
+			rd.Kind = ReadKindStorage
+		}
+	default:
+		// nop
+	}
+	return
 }
 
 // arguments:   memory location and the transaction index
