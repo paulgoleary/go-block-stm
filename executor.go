@@ -108,7 +108,7 @@ func (ev *ExecVersionView) Read(k []byte) (v []byte, err error) {
 	default:
 		return nil, fmt.Errorf("should not happen - invalid read result status '%ver'", res.status())
 	}
-	rd := res.rd(v)
+	rd := res.rd(k)
 	mk := base64.StdEncoding.EncodeToString(k)
 	// TODO: I assume we don't want to overwrite an existing read because this could - for example - change a storage
 	//  read to map if the same value is read multiple times.
