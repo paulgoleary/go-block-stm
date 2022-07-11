@@ -39,6 +39,12 @@ func TestCoreDependency(t *testing.T) {
 	inp0 := []ReadDescriptor{res0.rd(p0)}
 	lastTxIO.recordRead(0, inp0)
 
+	// . in main execution loop task 1 would only be validated *after* task 0 was complete.
+	// . the semantics of validation here are basically 'are all my reads guaranteed to be final values'
+	//  . if the transaction read from disk, no previous transaction has written to that value
+	//  . if the transaction read the output of a previous transaction, the read value is marked with the index that it read
+	// . other cases - i.e. a later transaction writes a new value that the transaction 'should have' read - are handled elsewhere
+
 	valid := validateVersion(1, lastTxIO, mvh)
 	require.False(t, valid, "tx1 sees dependency on tx0 write") // would cause re-exec and re-validation of tx1
 
@@ -49,6 +55,8 @@ func TestCoreDependency(t *testing.T) {
 	// recordRead read dep of tx1
 	inp1 = []ReadDescriptor{res1.rd(p1)}
 	lastTxIO.recordRead(1, inp1)
+
+	// . upon 're-execution' task 1 now 'sees' the output of task 0 so it is guaranteed to be final
 
 	valid = validateVersion(1, lastTxIO, mvh)
 	require.True(t, valid, "tx1 is complete since dep on tx0 is satisfied")
