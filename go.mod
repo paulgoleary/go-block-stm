@@ -5,6 +5,7 @@ go 1.18
 require (
 	github.com/0xPolygon/eth-state-transition v0.0.0-20220112205905-11f288a4b5d3
 	github.com/emirpasic/gods v1.18.1
+	github.com/heimdalr/dag v1.2.1
 	github.com/holiman/uint256 v1.2.0
 	github.com/ledgerwatch/erigon v0.0.0-20210604162528-1f13f73045ee
 	github.com/stretchr/testify v1.7.1
@@ -29,7 +30,6 @@ require (
 	github.com/gorilla/websocket v1.4.2 // indirect
 	github.com/hashicorp/go-immutable-radix v1.3.1 // indirect
 	github.com/hashicorp/golang-lru v0.5.5-0.20210104140557-80c98217689d // indirect
-	github.com/heimdalr/dag v1.2.1 // indirect
 	github.com/json-iterator/go v1.1.11 // indirect
 	github.com/ledgerwatch/lmdb-go v1.18.2 // indirect
 	github.com/logrusorgru/aurora v2.0.3+incompatible // indirect

@@ -6,6 +6,8 @@ import (
 	"github.com/heimdalr/dag"
 	"github.com/stretchr/testify/require"
 	"os"
+	"sort"
+	"strconv"
 	"strings"
 	"testing"
 )
@@ -38,9 +40,19 @@ func (td *TxDeps) addWrite(w string) {
 	td.writeDeps[w] = true
 }
 
-func (td *TxDeps) hasDep(txTo *TxDeps) bool {
+func (td *TxDeps) getForwardDeps(txTo *TxDeps) (ret map[string]bool) {
+	ret = make(map[string]bool)
 	for k, _ := range td.writeDeps {
 		if txTo.readDeps[k] {
+			ret[k] = true
+		}
+	}
+	return
+}
+
+func (td *TxDeps) hasReadDep(txFrom *TxDeps) bool {
+	for k, _ := range td.readDeps {
+		if txFrom.writeDeps[k] {
 			return true
 		}
 	}
@@ -52,11 +64,9 @@ var _ dag.IDInterface = &TxDeps{}
 func TestTransactionDAG(t *testing.T) {
 
 	d := dag.NewDAG()
-	_ = d
 
 	ignoreDepPrefixes := []string{"742d13f0b2a19c823bdd362b16305e4704b97a38", "70bca57f4579f58670ab2d18ef16e02c17553c38"}
 
-	// data_31212704
 	f, err := os.Open("/Users/pauloleary/work/data_31218048.csv")
 	require.NoError(t, err)
 
@@ -107,29 +117,55 @@ func TestTransactionDAG(t *testing.T) {
 		}
 	}
 
-	for i := 0; i < len(txs); i++ {
-		txFrom := txs[fmt.Sprint(i)]
-		fromId, _ := d.AddVertex(txFrom)
-		for j := i + 1; j < len(txs); j++ {
-			txTo := txs[fmt.Sprint(j)]
-			if txFrom.hasDep(txTo) {
-				toId, _ := d.AddVertex(txTo)
-				d.AddEdge(fromId, toId)
+	d.AddVertex(txs["0"]) // make sure 0 is added ...
+	for i := len(txs) - 1; i > 0; i-- {
+		txTo := txs[fmt.Sprint(i)]
+		txToId, _ := d.AddVertex(txTo)
+		for j := i - 1; j >= 0; j-- {
+			txFrom := txs[fmt.Sprint(j)]
+			if txFrom.hasReadDep(txTo) {
+				txFromId, _ := d.AddVertex(txFrom)
+				d.AddEdge(txFromId, txToId)
+				break // once we add a 'backward' dep we can't execute before that transaction so no need to proceed
 			}
 		}
 	}
 
-	d.ReduceTransitively()
-	println(d.String())
+	mustAtoI := func(s string) int {
+		if i, err := strconv.Atoi(s); err != nil {
+			panic(err)
+		} else {
+			return i
+		}
+	}
 
 	maxDesc := 0
-	for i := 0; i < len(txs); i++ {
-		desc, err := d.GetDescendants(fmt.Sprint(i))
-		require.NoError(t, err)
+	var roots []int
+	for k, _ := range d.GetRoots() {
+		roots = append(roots, mustAtoI(k))
+	}
+	sort.Ints(roots)
+
+	makeStrs := func(ints []int) (ret []string) {
+		for _, v := range ints {
+			ret = append(ret, fmt.Sprint(v))
+		}
+		return
+	}
+
+	for _, v := range roots {
+		ids := []int{v}
+		desc, _ := d.GetDescendants(fmt.Sprint(v))
+		for kd, _ := range desc {
+			ids = append(ids, mustAtoI(kd))
+		}
+		sort.Ints(ids)
+		println(fmt.Sprintf("(%v) %v", len(ids), strings.Join(makeStrs(ids), "->")))
+
 		if len(desc) > maxDesc {
 			maxDesc = len(desc)
 		}
 	}
 
-	println(fmt.Sprintf("max chain length: %v", maxDesc))
+	println(fmt.Sprintf("max chain length: %v of %v", maxDesc+1, len(txs)))
 }
